@@ -3,7 +3,7 @@ import 'dart:math';
 import 'lcd.dart';
 import 'snake_logic.dart';
 
-const _food = ['.X.', 'X.X', '.X.'];
+const _food = ['.X.', 'XXX', '.X.'];
 
 const _bonusSprites = [
   ['X.XXX.X', '.XXXXX.', 'X.X.X.X'], // bug
@@ -52,43 +52,56 @@ void drawMenu(
   required bool walls,
   required int highScore,
 }) {
-  c.textCentered('SNAKE', 3, scale: 3);
+  c.textCentered('SNAKE', 3, scale: 2);
 
   // A little decorative snake chasing its food.
   const segments = 10;
   const startX = (LcdLayout.width - (segments + 2) * 4) ~/ 2;
   for (var i = 0; i < segments; i++) {
-    _segment(c, startX + i * 4, 22,
+    _segment(c, startX + i * 4, 21,
         joinRight: i < segments - 1,
         pattern: i == segments - 1 ? _headOpen[Direction.right] : null);
   }
-  c.bitmap(_food, startX + (segments + 1) * 4, 22);
+  c.bitmap(_food, startX + (segments + 1) * 4, 21);
 
-  final items = ['NEW GAME', 'LEVEL $level', walls ? 'WALLS ON' : 'NO WALLS'];
+  final items = [
+    ('NEW GAME', null),
+    ('LEVEL', '$level'),
+    ('WALLS', walls ? 'ON' : 'OFF'),
+  ];
   for (var i = 0; i < items.length; i++) {
-    final y = 30 + i * 14;
-    if (i == selected) {
-      c.fill(2, y, LcdLayout.width - 4, 14);
-      c.textCentered(items[i], y + 2, scale: 2, ink: false);
-      if (i > 0) {
-        c.text('<', 3, y + 5, ink: false);
-        c.text('>', LcdLayout.width - 6, y + 5, ink: false);
-      }
-    } else {
-      c.textCentered(items[i], y + 2, scale: 2);
+    final (label, value) = items[i];
+    final y = 29 + i * 11;
+    final isSelected = i == selected;
+    if (isSelected) c.fill(1, y, LcdLayout.width - 2, 11);
+    c.text(label, 4, y + 2, ink: !isSelected);
+    if (value != null) {
+      c.textRight(isSelected ? '< $value >' : value, LcdLayout.width - 5,
+          y + 2, ink: !isSelected);
     }
   }
 
-  c.textCentered('TOP $highScore', 80);
-  c.textCentered('5:OK  4/6:CHANGE', 94);
+  c.text('TOP SCORE', 4, 64);
+  c.textRight('$highScore', LcdLayout.width - 5, 64);
+
+  _dottedLine(c, 78);
+  c.textCentered('OK:SELECT', 84);
+  c.textCentered('< >:CHANGE', 95);
+}
+
+void _dottedLine(LcdCanvas c, int y) {
+  for (var x = 1; x < LcdLayout.width - 1; x += 2) {
+    c.px(x, y);
+  }
 }
 
 void drawGame(LcdCanvas c, SnakeGame g, {bool showSnake = true}) {
   // Header: score on the left, bonus creature countdown on the right.
   c.text(g.score.toString().padLeft(4, '0'), 0, 0);
   if (g.bonus != null) {
-    c.bitmap(_bonusSprites[g.bonusVariant], LcdLayout.width - 16, 1);
-    c.text(g.bonusTicksLeft.toString().padLeft(2, '0'), LcdLayout.width - 7, 0);
+    c.bitmap(_bonusSprites[g.bonusVariant], LcdLayout.width - 20, 2);
+    c.textRight(g.bonusTicksLeft.toString().padLeft(2, '0'),
+        LcdLayout.width - 1, 0);
   }
 
   // Field border: solid when walls kill, dotted when the snake wraps.
@@ -147,13 +160,14 @@ void drawGame(LcdCanvas c, SnakeGame g, {bool showSnake = true}) {
 }
 
 void drawPaused(LcdCanvas c) {
-  const w = 59;
-  const h = 17;
+  const w = 61;
+  const h = 27;
   const x = (LcdLayout.width - w) ~/ 2;
-  const y = 46;
+  const y = 40;
   c.fill(x - 1, y - 1, w + 2, h + 2, ink: false);
   c.outline(x, y, w, h);
-  c.textCentered('PAUSED', y + 4, scale: 2);
+  c.textCentered('PAUSED', y + 5);
+  c.textCentered('OK:RESUME', y + 15);
 }
 
 void drawGameOver(
@@ -164,15 +178,19 @@ void drawGameOver(
   required bool won,
   required int frame,
 }) {
-  c.textCentered(won ? 'YOU' : 'GAME', 8, scale: 3);
-  c.textCentered(won ? 'WIN!' : 'OVER', 26, scale: 3);
-  c.textCentered('SCORE', 50, scale: 2);
-  c.textCentered('$score', 64, scale: 2);
+  c.textCentered(won ? 'YOU' : 'GAME', 6, scale: 2);
+  c.textCentered(won ? 'WIN!' : 'OVER', 24, scale: 2);
+
+  c.text('SCORE', 4, 48);
+  c.textRight('$score', LcdLayout.width - 5, 48);
   if (newRecord) {
     // Blink the record banner.
-    if (frame.isEven) c.textCentered('NEW TOP SCORE!', 80);
+    if (frame.isEven) c.textCentered('NEW RECORD!', 62);
   } else {
-    c.textCentered('TOP ${max(score, highScore)}', 80);
+    c.text('TOP SCORE', 4, 62);
+    c.textRight('${max(score, highScore)}', LcdLayout.width - 5, 62);
   }
-  c.textCentered('5:CONTINUE', 94);
+
+  _dottedLine(c, 78);
+  c.textCentered('OK:CONTINUE', 88);
 }

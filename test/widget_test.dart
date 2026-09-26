@@ -17,14 +17,23 @@ void main() {
           (w) => w is CustomPaint && w.painter is LcdPainter),
       findsOneWidget,
     );
-    for (final n in ['2', '4', '5', '6', '8']) {
-      expect(find.text(n), findsOneWidget);
+    for (final n in [2, 4, 5, 6, 8]) {
+      expect(find.byKey(ValueKey('key-$n')), findsOneWidget);
     }
+    expect(find.text('SELECT'), findsOneWidget);
 
-    // Press 5 (OK) on "NEW GAME", let a few ticks pass, then pause.
-    await tester.tap(find.text('5'));
+    // OK on "NEW GAME" starts a game; the soft key then offers PAUSE.
+    await tester.tap(find.byKey(const ValueKey('key-5')));
     await tester.pump(const Duration(seconds: 1));
-    await tester.tap(find.text('5'));
-    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('PAUSE'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('key-5')));
+    await tester.pump();
+    expect(find.text('RESUME'), findsOneWidget);
+
+    // BACK leaves the game and returns to the menu.
+    await tester.tap(find.byKey(const ValueKey('key-back')));
+    await tester.pump();
+    expect(find.text('SELECT'), findsOneWidget);
   });
 }

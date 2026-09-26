@@ -112,11 +112,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
   void _endGame() {
     HapticFeedback.heavyImpact();
-    if (_game.score > _highScore) {
-      _highScore = _game.score;
-      _newRecord = true;
-      _prefs?.setInt('highScore', _highScore);
-    }
+    _recordScore();
     // Blink the snake a few times, like the original, before the summary.
     _mode = _Mode.dying;
     _frame = 0;
@@ -126,6 +122,14 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         if (_frame >= 8) _showGameOver();
       });
     });
+  }
+
+  void _recordScore() {
+    if (_game.score > _highScore) {
+      _highScore = _game.score;
+      _newRecord = true;
+      _prefs?.setInt('highScore', _highScore);
+    }
   }
 
   void _showGameOver() {
@@ -236,6 +240,24 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     });
   }
 
+  /// On-screen BACK: leave the current game and return to the menu.
+  void _onBackButton() {
+    HapticFeedback.selectionClick();
+    setState(() {
+      if (_mode == _Mode.playing || _mode == _Mode.paused) {
+        _recordScore();
+      }
+      _toMenu();
+    });
+  }
+
+  String get _okLabel => switch (_mode) {
+        _Mode.menu => 'SELECT',
+        _Mode.playing => 'PAUSE',
+        _Mode.paused => 'RESUME',
+        _Mode.dying || _Mode.gameOver => 'OK',
+      };
+
   void _onBack() {
     setState(() {
       switch (_mode) {
@@ -343,24 +365,19 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
               child: SafeArea(
                 child: Column(
                   children: [
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
                     Expanded(child: Center(child: _buildScreen())),
-                    const SizedBox(height: 14),
-                    const Text(
-                      'S N A K E',
-                      style: TextStyle(
-                        color: Color(0xFF8FA3B3),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 2,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 16),
                     SizedBox(
-                      height: (screenHeight * 0.3).clamp(170.0, 250.0),
+                      height: (screenHeight * 0.36).clamp(230.0, 330.0),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 24),
-                        child: Keypad(onKey: _onKeypad),
+                        child: Keypad(
+                          onKey: _onKeypad,
+                          onBack: _onBackButton,
+                          backEnabled: _mode != _Mode.menu,
+                          okLabel: _okLabel,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -402,7 +419,10 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                 ),
               ),
               child: CustomPaint(
-                painter: LcdPainter(_drawScene),
+                painter: LcdPainter(
+                  _drawScene,
+                  devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+                ),
                 size: Size.infinite,
               ),
             ),

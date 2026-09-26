@@ -7,8 +7,8 @@ import 'pixel_font.dart';
 /// Classic green monochrome LCD palette.
 abstract final class LcdColors {
   static const background = Color(0xFFC7F0D8);
-  static const backgroundDim = Color(0xFFB4DEC4);
-  static const ink = Color(0xFF43523D);
+  static const backgroundDim = Color(0xFFB9E4CA);
+  static const ink = Color(0xFF2F3B2A);
 }
 
 /// Geometry of the virtual LCD, measured in LCD pixels.
@@ -17,15 +17,15 @@ abstract final class LcdLayout {
   static const rows = 24;
   static const cell = 4;
 
-  /// Score line height (5 px text + 1 px spacing).
-  static const header = 6;
+  /// Score line height (7 px text + 1 px spacing).
+  static const header = 8;
 
   /// Field border sits at [header]; one px padding, then the cells.
   static const cellsLeft = 2;
   static const cellsTop = header + 2;
 
   static const width = cols * cell + 3; // 83
-  static const height = cellsTop + rows * cell + 1; // 105
+  static const height = cellsTop + rows * cell + 1; // 107
 
   /// Blank LCD pixels around the drawable area.
   static const margin = 2;
@@ -34,13 +34,15 @@ abstract final class LcdLayout {
 }
 
 /// Collects LCD pixels into batched paths and paints them in draw order.
+///
+/// Every LCD pixel is a solid square whose edges land on physical screen
+/// pixels, so shapes render crisp with no blur or seams.
 class LcdCanvas {
-  LcdCanvas(this._origin, this._unit)
-      : _gap = _unit >= 3 ? _unit * 0.12 : 0.0;
+  LcdCanvas(this._origin, this._unit, this._dpr);
 
   final Offset _origin;
   final double _unit;
-  final double _gap;
+  final double _dpr;
   final List<(Path, bool)> _layers = [];
 
   Path _layer(bool ink) {
@@ -48,30 +50,20 @@ class LcdCanvas {
     return _layers.last.$1;
   }
 
-  void px(int x, int y, {bool ink = true}) {
-    final left = _origin.dx + x * _unit;
-    final top = _origin.dy + y * _unit;
-    if (ink) {
-      // A hairline gap between lit pixels gives the dot-matrix look.
-      _layer(true).addRect(Rect.fromLTWH(
-          left + _gap / 2, top + _gap / 2, _unit - _gap, _unit - _gap));
-    } else {
-      _layer(false).addRect(Rect.fromLTWH(left, top, _unit, _unit));
-    }
+  double _snap(double v) => (v * _dpr).roundToDouble() / _dpr;
+
+  /// Fills a rectangle of LCD pixels. Fractional positions are allowed (used
+  /// for smooth motion) and are snapped to whole physical pixels.
+  void fill(num x, num y, num w, num h, {bool ink = true}) {
+    _layer(ink).addRect(Rect.fromLTRB(
+      _snap(_origin.dx + x * _unit),
+      _snap(_origin.dy + y * _unit),
+      _snap(_origin.dx + (x + w) * _unit),
+      _snap(_origin.dy + (y + h) * _unit),
+    ));
   }
 
-  void fill(int x, int y, int w, int h, {bool ink = true}) {
-    if (!ink) {
-      _layer(false).addRect(Rect.fromLTWH(_origin.dx + x * _unit,
-          _origin.dy + y * _unit, w * _unit, h * _unit));
-      return;
-    }
-    for (var j = 0; j < h; j++) {
-      for (var i = 0; i < w; i++) {
-        px(x + i, y + j);
-      }
-    }
-  }
+  void px(int x, int y, {bool ink = true}) => fill(x, y, 1, 1, ink: ink);
 
   void outline(int x, int y, int w, int h) {
     fill(x, y, w, 1);
@@ -105,36 +97,41 @@ class LcdCanvas {
         scale: scale, ink: ink);
   }
 
+  void textRight(String s, int right, int y, {int scale = 1, bool ink = true}) {
+    text(s, right - textWidth(s, scale: scale) + 1, y, scale: scale, ink: ink);
+  }
+
   void paintTo(Canvas canvas) {
-    final shadowOffset = Offset(_unit * 0.3, _unit * 0.3);
-    final shadow = Paint()..color = LcdColors.ink.withValues(alpha: 0.16);
-    final ink = Paint()..color = LcdColors.ink;
-    final clear = Paint()..color = LcdColors.background;
+    final ink = Paint()
+      ..color = LcdColors.ink
+      ..isAntiAlias = false;
+    final clear = Paint()
+      ..color = LcdColors.background
+      ..isAntiAlias = false;
     for (final (path, isInk) in _layers) {
-      if (isInk) {
-        canvas.drawPath(path.shift(shadowOffset), shadow);
-        canvas.drawPath(path, ink);
-      } else {
-        canvas.drawPath(path, clear);
-      }
+      canvas.drawPath(path, isInk ? ink : clear);
     }
   }
 }
 
 class LcdPainter extends CustomPainter {
-  LcdPainter(this.draw);
+  LcdPainter(this.draw, {required this.devicePixelRatio, super.repaint});
 
   final void Function(LcdCanvas c) draw;
+  final double devicePixelRatio;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final unit = min(size.width / LcdLayout.totalWidth,
+    final dpr = devicePixelRatio;
+    // Snap the LCD pixel size and origin to whole physical pixels.
+    final fit = min(size.width / LcdLayout.totalWidth,
         size.height / LcdLayout.totalHeight);
+    final unit = max(1.0, (fit * dpr).floorToDouble()) / dpr;
     final origin = Offset(
-      (size.width - LcdLayout.width * unit) / 2,
-      (size.height - LcdLayout.height * unit) / 2,
+      ((size.width - LcdLayout.width * unit) / 2 * dpr).roundToDouble() / dpr,
+      ((size.height - LcdLayout.height * unit) / 2 * dpr).roundToDouble() / dpr,
     );
-    final lcd = LcdCanvas(origin, unit);
+    final lcd = LcdCanvas(origin, unit, dpr);
     draw(lcd);
     lcd.paintTo(canvas);
   }

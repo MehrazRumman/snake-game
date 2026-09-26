@@ -92,9 +92,13 @@ class SnakeGame {
     if (_pendingTurns.length < 2) _pendingTurns.add(d);
   }
 
+  /// The direction the snake will move on the next tick.
+  Direction get nextDirection =>
+      _pendingTurns.isEmpty ? direction : _pendingTurns.first;
+
   /// The cell the head will move into on the next tick.
   Cell get nextHead {
-    final d = _pendingTurns.isEmpty ? direction : _pendingTurns.first;
+    final d = nextDirection;
     var x = head.x + d.dx;
     var y = head.y + d.dy;
     if (!walls) {
@@ -109,27 +113,35 @@ class SnakeGame {
     return b != null && c.y == b.y && (c.x == b.x || c.x == b.x + 1);
   }
 
+  /// Whether the tail stays in place on the next tick.
+  bool get willGrow => _growth > 0 || nextHead == food;
+
+  /// Whether the next tick will end the game.
+  bool get nextMoveIsFatal => isOver || _isFatal(nextHead);
+
+  bool _isFatal(Cell next) {
+    if (next.x < 0 || next.x >= cols || next.y < 0 || next.y >= rows) {
+      return true;
+    }
+    // The tail moves out of the way this tick unless the snake is growing.
+    final checkedLength = willGrow ? snake.length : snake.length - 1;
+    for (var i = 0; i < checkedLength; i++) {
+      if (snake[i] == next) return true;
+    }
+    return false;
+  }
+
   TickEvent tick() {
     if (isOver) return isWon ? TickEvent.won : TickEvent.died;
 
     final next = nextHead;
-    if (_pendingTurns.isNotEmpty) direction = _pendingTurns.removeFirst();
-
-    if (next.x < 0 || next.x >= cols || next.y < 0 || next.y >= rows) {
+    if (_isFatal(next)) {
       isOver = true;
       return TickEvent.died;
     }
+    if (_pendingTurns.isNotEmpty) direction = _pendingTurns.removeFirst();
 
     final eatsFood = next == food;
-    // The tail moves out of the way this tick unless the snake is growing.
-    final grows = eatsFood || _growth > 0;
-    final checkedLength = grows ? snake.length : snake.length - 1;
-    for (var i = 0; i < checkedLength; i++) {
-      if (snake[i] == next) {
-        isOver = true;
-        return TickEvent.died;
-      }
-    }
 
     snake.insert(0, next);
     var event = TickEvent.moved;

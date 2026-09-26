@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -18,7 +19,8 @@ class GameScreen extends StatefulWidget {
   State<GameScreen> createState() => _GameScreenState();
 }
 
-class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
+class _GameScreenState extends State<GameScreen>
+    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   static const _bodyTop = Color(0xFF2A3947);
   static const _bodyBottom = Color(0xFF141C24);
   static const _swipeThreshold = 18.0;
@@ -33,6 +35,13 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   int _frame = 0;
   Timer? _timer;
   SharedPreferences? _prefs;
+
+  /// Drives the game every frame while playing, so the snake can glide
+  /// between ticks.
+  late final Ticker _ticker = createTicker(_onFrame);
+  final _repaint = ValueNotifier<int>(0);
+  Duration _lastTick = Duration.zero;
+  double _progress = 0;
   Offset _swipeDelta = Offset.zero;
 
   @override
@@ -46,6 +55,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     _timer?.cancel();
+    _ticker.dispose();
+    _repaint.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -85,13 +96,34 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   void _stopTimer() {
     _timer?.cancel();
     _timer = null;
+    _ticker.stop();
+  }
+
+  /// Starts the frame loop, continuing from the current glide [_progress].
+  void _startLoop() {
+    _timer?.cancel();
+    _lastTick = -_tickInterval * _progress;
+    _ticker.start();
+  }
+
+  void _onFrame(Duration elapsed) {
+    final interval = _tickInterval;
+    while (_mode == _Mode.playing && elapsed - _lastTick >= interval) {
+      _lastTick += interval;
+      _onTick();
+    }
+    if (_mode == _Mode.playing) {
+      _progress = (elapsed - _lastTick).inMicroseconds / interval.inMicroseconds;
+    }
+    _repaint.value++;
   }
 
   void _startGame() {
     _game = SnakeGame(level: _level, walls: _walls);
     _newRecord = false;
     _mode = _Mode.playing;
-    _startTimer(_tickInterval, _onTick);
+    _progress = 0;
+    _startLoop();
   }
 
   void _onTick() {
@@ -107,15 +139,20 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       case TickEvent.moved:
         break;
     }
-    setState(() {});
   }
 
   void _endGame() {
     HapticFeedback.heavyImpact();
     _recordScore();
+    _ticker.stop();
+    _progress = 0;
     // Blink the snake a few times, like the original, before the summary.
     _mode = _Mode.dying;
     _frame = 0;
+    // Called from inside a frame callback, so defer the rebuild request.
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() {});
+    });
     _startTimer(const Duration(milliseconds: 180), () {
       setState(() {
         _frame++;
@@ -151,7 +188,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
 
   void _resume() {
     _mode = _Mode.playing;
-    _startTimer(_tickInterval, _onTick);
+    _startLoop();
   }
 
   void _toMenu() {
@@ -321,9 +358,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
             walls: _walls,
             highScore: _highScore);
       case _Mode.playing:
-        drawGame(c, _game);
+        drawGame(c, _game, progress: _progress);
       case _Mode.paused:
-        drawGame(c, _game);
+        drawGame(c, _game, progress: _progress);
         drawPaused(c);
       case _Mode.dying:
         drawGame(c, _game, showSnake: _frame.isOdd);
@@ -422,6 +459,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
                 painter: LcdPainter(
                   _drawScene,
                   devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+                  repaint: _repaint,
                 ),
                 size: Size.infinite,
               ),

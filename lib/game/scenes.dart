@@ -11,11 +11,20 @@ const _bonusSprites = [
   ['.XXXXX.', 'XX.X.XX', 'X.X.X.X'], // ghost
 ];
 
-const _headClosed = {
-  Direction.right: ['X.X', 'XXX', 'XXX'],
-  Direction.left: ['X.X', 'XXX', 'XXX'],
-  Direction.up: ['XXX', '.XX', 'XXX'],
-  Direction.down: ['XXX', 'XX.', 'XXX'],
+/// Pixels cleared out of the 3x3 head block to draw the eye.
+const _eye = {
+  Direction.right: [(1, 0)],
+  Direction.left: [(1, 0)],
+  Direction.up: [(0, 1)],
+  Direction.down: [(2, 1)],
+};
+
+/// Pixels cleared to open the mouth when food is right ahead.
+const _mouth = {
+  Direction.right: [(1, 1), (2, 1)],
+  Direction.left: [(0, 1), (1, 1)],
+  Direction.up: [(1, 0), (1, 1)],
+  Direction.down: [(1, 1), (1, 2)],
 };
 
 const _headOpen = {
@@ -95,7 +104,10 @@ void _dottedLine(LcdCanvas c, int y) {
   }
 }
 
-void drawGame(LcdCanvas c, SnakeGame g, {bool showSnake = true}) {
+/// [progress] (0..1) is how far the snake is between the last tick and the
+/// next one; it lets the snake glide smoothly instead of jumping cell to cell.
+void drawGame(LcdCanvas c, SnakeGame g,
+    {bool showSnake = true, double progress = 0}) {
   // Header: score on the left, bonus creature countdown on the right.
   c.text(g.score.toString().padLeft(4, '0'), 0, 0);
   if (g.bonus != null) {
@@ -135,27 +147,78 @@ void drawGame(LcdCanvas c, SnakeGame g, {bool showSnake = true}) {
 
   if (!showSnake) return;
 
+  _drawSnake(c, g, progress);
+}
+
+int _wrapDelta(int delta, int size) =>
+    delta > 1 ? delta - size : (delta < -1 ? delta + size : delta);
+
+const _fieldWidth = LcdLayout.cols * LcdLayout.cell;
+const _fieldHeight = LcdLayout.rows * LcdLayout.cell;
+
+/// Fills a rect given in LCD pixels, clipped to the playfield. Rects that
+/// cross an edge are also drawn on the opposite side, so the snake glides
+/// through the edges when walls are off.
+void _fieldRect(LcdCanvas c, double x, double y, double w, double h,
+    {bool ink = true}) {
+  const left = LcdLayout.cellsLeft;
+  const top = LcdLayout.cellsTop;
+  final nx = left + (x - left) % _fieldWidth;
+  final ny = top + (y - top) % _fieldHeight;
+  for (final ox in [0, -_fieldWidth]) {
+    for (final oy in [0, -_fieldHeight]) {
+      final l = max(nx + ox, left.toDouble());
+      final t = max(ny + oy, top.toDouble());
+      final r = min(nx + ox + w, (left + _fieldWidth).toDouble());
+      final b = min(ny + oy + h, (top + _fieldHeight).toDouble());
+      if (r > l && b > t) c.fill(l, t, r - l, b - t, ink: ink);
+    }
+  }
+}
+
+void _drawSnake(LcdCanvas c, SnakeGame g, double progress) {
   final snake = g.snake;
+  final moving = !g.nextMoveIsFatal;
+  final shift = moving ? progress.clamp(0.0, 1.0) * LcdLayout.cell : 0.0;
+
+  // Top-left corners of each 3x3 body block in LCD pixels, "unwrapped" so
+  // consecutive blocks are always 4 px apart even across a wrapped edge.
+  final (hx, hy) = _cellOrigin(snake.first);
+  final blocks = <(double, double)>[(hx.toDouble(), hy.toDouble())];
+  for (var i = 1; i < snake.length; i++) {
+    final dx = _wrapDelta(snake[i].x - snake[i - 1].x, g.cols);
+    final dy = _wrapDelta(snake[i].y - snake[i - 1].y, g.rows);
+    final (px, py) = blocks.last;
+    blocks.add((px + dx * LcdLayout.cell, py + dy * LcdLayout.cell));
+  }
+
+  // The head slides towards the next cell...
+  final d = g.nextDirection;
+  final head = (hx + d.dx * shift, hy + d.dy * shift);
+  // ...and the tail pulls in behind it, unless the snake is growing.
+  if (moving && !g.willGrow) {
+    final (tx, ty) = blocks.last;
+    final (bx, by) = blocks[blocks.length - 2];
+    final f = shift / LcdLayout.cell;
+    blocks.last = (tx + (bx - tx) * f, ty + (by - ty) * f);
+  }
+
+  // Fill the span between each pair of neighbouring blocks; each pair lies
+  // on one axis, so the bounding box is exactly the body between them.
+  final chain = [head, ...blocks];
+  for (var i = 0; i < chain.length - 1; i++) {
+    final (ax, ay) = chain[i];
+    final (bx, by) = chain[i + 1];
+    final l = min(ax, bx);
+    final t = min(ay, by);
+    _fieldRect(c, l, t, max(ax, bx) + 3 - l, max(ay, by) + 3 - t);
+  }
+
   final next = g.nextHead;
-  final mouthOpen = !g.isOver && (next == food || g.isBonusCell(next));
-  for (var i = 0; i < snake.length; i++) {
-    final s = snake[i];
-    bool isNeighbour(int j, int dx, int dy) =>
-        j >= 0 &&
-        j < snake.length &&
-        snake[j].x == s.x + dx &&
-        snake[j].y == s.y + dy;
-    final (px, py) = _cellOrigin(s);
-    _segment(
-      c,
-      px,
-      py,
-      joinRight: isNeighbour(i - 1, 1, 0) || isNeighbour(i + 1, 1, 0),
-      joinDown: isNeighbour(i - 1, 0, 1) || isNeighbour(i + 1, 0, 1),
-      pattern: i == 0
-          ? (mouthOpen ? _headOpen : _headClosed)[g.direction]
-          : null,
-    );
+  final mouthOpen = moving && (next == g.food || g.isBonusCell(next));
+  final (ex, ey) = head;
+  for (final (px, py) in (mouthOpen ? _mouth : _eye)[d]!) {
+    _fieldRect(c, ex + px, ey + py, 1, 1, ink: false);
   }
 }
 

@@ -1,11 +1,12 @@
 # snake-game
 
-A retro, pixel-style Snake game for Android, built with Flutter and styled after the classic monochrome phone Snake: green LCD screen, dot-matrix pixels, and a 3x3 phone keypad.
+A retro, pixel-style Snake game for Android, built with Flutter and styled after the classic monochrome phone Snake: a green LCD screen with crisp pixel art, and phone-style controls.
 
 ## Features
 
-- Everything on screen is drawn pixel by pixel on a virtual 83x105 LCD, including a custom 5 px bitmap font
-- Keypad controls (2/4/6/8 to steer, 5 for OK/pause) or swipe on the screen
+- Everything on screen is drawn pixel by pixel on a virtual LCD, including a custom 5x7 bitmap font
+- The snake glides smoothly between cells instead of jumping, including through the edges when walls are off
+- D-pad controls or swipe on the screen, plus BACK and SELECT/PAUSE/RESUME soft keys
 - Speed levels 1–9, with food worth more points at higher levels
 - Walls on (hitting the border ends the game) or no walls (the snake wraps around)
 - A bonus creature appears after every 5th food and is worth more the sooner you catch it
@@ -33,7 +34,7 @@ lib/
   game/pixel_font.dart      bitmap font
   game/scenes.dart          menu, game, pause and game-over screens
   screens/game_screen.dart  game loop, input, persistence
-  widgets/keypad.dart       phone keypad
+  widgets/keypad.dart       D-pad and soft keys
 test/                       unit tests for the rules, plus a widget smoke test
 ```
 
